@@ -90,43 +90,62 @@
         playPause: '[data-testid="control-button-playpause"]',
         next: '[data-testid="control-button-skip-forward"]',
         previous: '[data-testid="control-button-skip-back"]',
-        shuffle: '[data-testid="control-button-shuffle"]',
-        repeat: '[data-testid="control-button-repeat"]',
-        like: [
-          '[data-testid="now-playing-widget"] [data-testid="add-button"]',
-          '[data-testid="now-playing-widget"] button[aria-checked]',
+        // No data-testid any more: <button aria-label="Enable Shuffle for <song title>">
+        shuffle: [
+          '[data-testid="control-button-shuffle"]',
+          '[data-testid="player-controls"] button[aria-label*="shuffle" i]',
         ],
+        repeat: '[data-testid="control-button-repeat"]',
+        // <button aria-label="Add to Liked Songs" aria-checked="false"> next to the track title.
+        // Scoped to the now-playing widget (track rows on the page have their own like buttons).
+        // [data-testid^=…] matches both "now-playing-widget" and the newer "now-playing-widget-v2".
+        like: [
+          '[data-testid^="now-playing-widget"] button[aria-checked]',
+          '[data-testid^="now-playing-widget"] [data-testid="add-button"]',
+        ],
+        // <button data-testid="volume-bar-toggle-mute-button" aria-label="Mute">
+        mute: '[data-testid="volume-bar-toggle-mute-button"]',
+        // <div data-testid="progress-bar" style="--progress-bar-transform: 14.29%"> is the visible bar;
+        // a hidden <input type="range"> sits next to it.
         seek: {
           slider: [
             '[data-testid="playback-progressbar"] [data-testid="progress-bar"]',
             '[data-testid="playback-progressbar"] input[type="range"]',
           ],
+          cssVar: "--progress-bar-transform",
         },
         volume: {
           slider: [
             '[data-testid="volume-bar"] [data-testid="progress-bar"]',
             '[data-testid="volume-bar"] input[type="range"]',
           ],
+          cssVar: "--progress-bar-transform",
         },
       },
       state: {
+        // aria-label is "Pause" while playing, "Play" while paused
         isPlaying: {
           selector: '[data-testid="control-button-playpause"]',
           attr: "aria-label",
           match: /pause/i,
         },
+        // <div data-testid="now-playing-widget-v2">
+        //   <a data-testid="context-item-link">Tu Mil Jaaye (From "KING")</a>
+        //   <span data-testid="now-playing-widget-v2-byline"><a>Sachin-Jigar</a>, <a>Ed Sheeran</a>, …</span>
+        //   <img data-testid="cover-art-image" src="https://i.scdn.co/image/…">
         title: [
+          '[data-testid^="now-playing-widget"] [data-testid="context-item-link"]',
           '[data-testid="context-item-info-title"]',
-          '[data-testid="now-playing-widget"] [data-testid="context-item-link"]',
         ],
+        // The byline's text reads "Sachin-Jigar, Ed Sheeran, Arijit Singh, …"
         artist: [
+          '[data-testid^="now-playing-widget"] [data-testid$="byline"]',
           '[data-testid="context-item-info-subtitles"]',
-          '[data-testid="context-item-info-artist"]',
         ],
         artwork: {
           selector: [
-            '[data-testid="now-playing-widget"] img',
-            '[data-testid="cover-art-image"]',
+            '[data-testid^="now-playing-widget"] [data-testid="cover-art-image"]',
+            '[data-testid^="now-playing-widget"] img',
           ],
           prop: "src",
         },
@@ -138,23 +157,40 @@
           selector: '[data-testid="playback-duration"]',
           parse: "time",
         },
+        // Read the visible bar's CSS variable (68.01%), not the hidden <input step="0.1">,
+        // whose value the browser rounds to the step (0.68 → 0.7).
         volume: {
-          selector: '[data-testid="volume-bar"] input[type="range"]',
+          selector: '[data-testid="volume-bar"] [data-testid="progress-bar"]',
           slider: true,
+          cssVar: "--progress-bar-transform",
         },
+        // Mute button label flips to "Unmute" while muted
+        muted: {
+          selector: '[data-testid="volume-bar-toggle-mute-button"]',
+          attr: "aria-label",
+          match: /unmute/i,
+        },
+        // The label names the NEXT action: "Enable Shuffle …" means shuffle is off.
+        // (When on it reads e.g. "Disable Shuffle …" / "Enable Smart Shuffle …".)
         shuffle: {
-          selector: '[data-testid="control-button-shuffle"]',
-          attr: "aria-checked",
-          match: /true/,
+          selector: [
+            '[data-testid="control-button-shuffle"]',
+            '[data-testid="player-controls"] button[aria-label*="shuffle" i]',
+          ],
+          attr: "aria-label",
+          match: /^(?!enable shuffle)/i,
         },
-        // aria-checked: "false" = off, "true" = repeat all, "mixed" = repeat one
+        // The label names the NEXT mode:
+        //   "Enable repeat"     → currently off
+        //   "Enable repeat one" → currently repeat all
+        //   "Disable repeat"    → currently repeat one
         repeat: {
           selector: '[data-testid="control-button-repeat"]',
-          attr: "aria-checked",
-          modes: { one: /mixed/, all: /true/ },
+          attr: "aria-label",
+          modes: { one: /^disable repeat/i, all: /repeat one/i },
         },
         liked: {
-          selector: '[data-testid="now-playing-widget"] button[aria-checked]',
+          selector: '[data-testid^="now-playing-widget"] button[aria-checked]',
           attr: "aria-checked",
           match: /true/,
         },
