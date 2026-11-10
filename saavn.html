@@ -1,0 +1,46 @@
+<!doctype html><html><head>
+<style>
+  .c-progress { display: flex; align-items: center; width: 600px; margin: 20px; position: relative; }
+  .c-progress__start, .c-progress__end { width: 50px; font-size: 11px; }
+  .c-progress__track { flex: 1; height: 6px; background: #ccc; position: relative; }
+  .c-progress__seek { height: 100%; background: teal; }
+  .c-progress__current { position: absolute; top: -20px; left: 0; }
+</style>
+<script src="file:///home/user/Documents/extensions/playbackController/src/content/sites.js"></script>
+<script>window.__pbcSites.find(s => s.id === 'jiosaavn').hosts = [/^$/]; // file:// has no hostname</script>
+<script src="file:///home/user/Documents/extensions/playbackController/src/content/engine.js"></script>
+<script src="harness.js"></script>
+</head><body>
+<div id="player">
+<div class="c-progress" tabindex="0" aria-disabled="false" role="slider" aria-valuemin="0" aria-valuenow="16" aria-label="Playback progress" aria-valuetext="0:16 of 5:15" aria-valuemax="315"><div class="c-progress__start">0:16</div><div class="c-progress__end">5:15</div><div class="c-progress__current" style="transform: translate(301.5px, -50%);">1:13 / 5:15</div><div class="c-progress__track"><div class="c-progress__seek" style="width: 26px;"></div><div class="c-progress__knob"></div></div></div>
+</div>
+<script>
+  const prog = document.querySelector('.c-progress'), track = prog.querySelector('.c-progress__track');
+  // move the end label after the track visually, as on the real site
+  prog.appendChild(prog.querySelector('.c-progress__end'));
+  let lastFraction = null;
+  prog.addEventListener('mousedown', (e) => {   // site-like handler on the outer slider
+    const r = track.getBoundingClientRect();
+    lastFraction = (e.clientX - r.left) / r.width;
+    const secs = Math.round(lastFraction * 315);
+    prog.setAttribute('aria-valuenow', secs);
+    track.firstElementChild.style.width = (lastFraction * r.width) + 'px';
+  });
+  window.addEventListener('load', () => runTests(async ({ call, wait, check }) => {
+    await wait(200);
+    let s = await call('getState');
+    check('site = jiosaavn', s.site.id === 'jiosaavn');
+    check('position/duration from aria (16 / 315)', s.position === 16 && s.duration === 315, [s.position, s.duration]);
+    check('tooltip "1:13 / 5:15" ignored', s.position !== 73);
+    check('seek capability found', s.capabilities.seek === true);
+    let r = await call('seek', 157.5);
+    check('seek to 50% of the TRACK (not the outer box)', r.ok && Math.abs(lastFraction - 0.5) < 0.005, { r, lastFraction });
+    s = await call('getState');
+    check('position re-read after seek', Math.abs(s.position - 158) <= 1, s.position);
+    r = await call('seekBy', 10); s = await call('getState');
+    check('seekBy +10s', r.ok && Math.abs(s.position - 168) <= 1, s.position);
+    const d = await call('diagnose');
+    check('diagnose: track selector + fill fraction', d.controls.seek.includes('c-progress__track') && Math.abs(d.sliders.seek - 168/315) < 0.01, { seek: d.controls.seek, slider: d.sliders.seek });
+  }));
+</script>
+</body></html>

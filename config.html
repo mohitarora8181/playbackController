@@ -1,0 +1,68 @@
+<!doctype html><html><head>
+<script>
+Object.defineProperty(window, '__pbcSites', { configurable: true, value: [{
+  id: 'test', name: 'Test', color: '#123456', hosts: [/^$/],
+  controls: {
+    playPause: '#pp', next: ['#missing', '.bar [aria-label="Next" i]'], previous: '#nope',
+    seek: { slider: '#seek' }, volume: { slider: '#vol' }, shuffle: '#sh',
+  },
+  state: {
+    isPlaying: { selector: '#pp', attr: 'aria-label', match: /pause/i },
+    title: '.bar .t', artist: { selector: '.bar .a', transform: v => v.split('•')[0].trim() },
+    position: { selector: '#time', transform: v => v.split('/')[0], parse: 'time' },
+    duration: { selector: '#time', transform: v => v.split('/')[1], parse: 'time' },
+    shuffle: { selector: '#sh', attr: 'aria-checked', match: /true/ },
+  },
+}]});
+</script>
+<script src="file:///home/user/Documents/extensions/playbackController/src/content/engine.js"></script>
+<script src="harness.js"></script>
+</head><body>
+<div class="bar">
+  <span class="t">Song A</span><span class="a">Artist A • Album</span>
+  <button id="pp" aria-label="Play">pp</button>
+  <button aria-label="next" id="nx">nx</button>
+  <button id="sh" aria-checked="false">sh</button>
+  <span id="time">0:05 / 0:20</span>
+  <input id="seek" type="range" min="0" max="20000" value="0">
+  <div id="vol" style="width:200px;height:10px;background:#ccc"></div>
+</div>
+<audio id="au" src="tone.wav"></audio>
+<script>
+  let nextCount = 0, volFraction = null, seekVal = null, msCalled = false;
+  const au = document.getElementById('au'), pp = document.getElementById('pp');
+  navigator.mediaSession.setActionHandler('previoustrack', () => msCalled = true);
+  pp.onclick = () => { if (au.paused) { au.play(); pp.setAttribute('aria-label','Pause'); } else { au.pause(); pp.setAttribute('aria-label','Play'); } };
+  document.getElementById('nx').onclick = () => nextCount++;
+  document.getElementById('sh').onclick = (e) => e.target.setAttribute('aria-checked', String(e.target.getAttribute('aria-checked') !== 'true'));
+  document.getElementById('seek').addEventListener('change', (e) => seekVal = Number(e.target.value));
+  document.getElementById('vol').addEventListener('pointerdown', (e) => { const r = e.currentTarget.getBoundingClientRect(); volFraction = (e.clientX - r.left) / r.width; });
+  window.addEventListener('load', () => runTests(async ({ call, wait, check }) => {
+    await wait(300);
+    let s = await call('getState');
+    check('detects site', s.site.id === 'test', s.site);
+    check('title/artist from config', s.title === 'Song A' && s.artist === 'Artist A', [s.title, s.artist]);
+    check('"0:05 / 0:20" -> transform then parse', s.position === 5 && s.duration === 20, [s.position, s.duration]);
+    check('initially paused', s.isPlaying === false);
+    check('caps follow selectors only', s.capabilities.togglePlay && s.capabilities.next && !s.capabilities.previous && s.capabilities.seek && s.capabilities.volume && s.capabilities.shuffle && !s.capabilities.like, s.capabilities);
+    let r = await call('togglePlay'); await wait(300);
+    s = await call('getState');
+    check('togglePlay clicks button', r.ok && s.isPlaying === true && !au.paused, r);
+    r = await call('next');
+    check('next uses second selector in list', r.ok && nextCount === 1, r);
+    r = await call('previous');
+    check('unmatched selector -> ok:false, no media-session fallback', r.ok === false && !msCalled && au.currentTime > 0, r);
+    r = await call('seek', 10);
+    check('seek via range slider', r.ok && seekVal === 10000, [r, seekVal]);
+    r = await call('setVolume', 0.25);
+    check('volume via pointer slider, audio untouched', r.ok && Math.abs(volFraction - 0.25) < 0.01 && au.volume === 1, [r, volFraction]);
+    r = await call('toggleShuffle'); s = await call('getState');
+    check('shuffle toggled + read', r.ok && s.shuffle === true);
+    r = await call('togglePlay'); await wait(200);
+    check('pause again', au.paused);
+    const d = await call('diagnose');
+    check('diagnose', d.controls.next === '.bar [aria-label="Next" i]' && d.controls.previous === null, d.controls);
+    check('unknown method rejected', (await call('constructor')).error !== undefined);
+  }));
+</script>
+</body></html>
