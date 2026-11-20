@@ -393,6 +393,31 @@
       name: "Gaana",
       color: "#e72c30",
       hosts: ["gaana.com"],
+      // Header search: <input id="header-search">. The dropdown (.searchDropdown) mixes two row types:
+      //   cards  — Top Results / Playlists: <article class="cardArticle">
+      //            <a href="/song/…|/playlist/…"> … <img> … <div class="play-pause-btn"><button class="play">
+      //            <div class="cardTitle"><h3><a>Tu Mil Jaaye (From "KING")</a>
+      //   list   — Songs: <article class="listItemArticle"> <img> <span class="playBtnBox"> … <button class="play">
+      //            <div class="itemTitle"><h3><a>Tu Aage Jayega</a></h3></div><p>Mikki,Metalpump</p>
+      search: {
+        input: "#header-search",
+        results: ".searchDropdown article.cardArticle, .searchDropdown article.listItemArticle",
+        title: [".cardTitle h3 a", ".itemTitle h3 a"],
+        subtitle: [
+          // list rows: the artists, "Mikki,Metalpump" → "Mikki, Metalpump"
+          { selector: ".itemContent p", transform: (v) => v.replace(/\s*,\s*/g, ", ") },
+          // cards have no subtitle: show the kind from the link (/song/…, /playlist/…, /album/…)
+          {
+            selector: "a[href]",
+            attr: "href",
+            transform: (href) =>
+              ({ song: "Song", playlist: "Playlist", album: "Album", artist: "Artist" })[href.split("/")[1]],
+          },
+        ],
+        image: { selector: "img", prop: "src" },
+        play: ".play-pause-btn button",
+        delay: 500,
+      },
       controls: {
         // <div class="play-pause-btn"><button class="pause" aria-label="Pause">
         playPause: `${GAANA} .play-pause-btn button`,
