@@ -76,6 +76,7 @@
   /** Match an element by its accessible label or tooltip (case-insensitive). */
   const label = (word) => [`[aria-label="${word}" i]`, `[title="${word}" i]`];
 
+  const YTM = "ytmusic-player-bar"; // YouTube Music bottom player bar
   const GAANA = ".miniPlayerWrapper"; // Gaana bottom player bar
   const SAAVN_BAR = ["#player", ".c-player", '[class*="c-player"]'];
 
@@ -198,64 +199,95 @@
     },
 
     // ────────────────────────────── YouTube Music ──────────────────────────────
+    // <ytmusic-player-bar repeat-mode="NONE"> holds everything. Buttons are
+    // <yt-icon-button class="next-button" title="Next"><button aria-label="Next">: the label and the
+    // click handler live on the INNER <button>. Several controls exist twice (hidden mobile bar
+    // #right-controls-mweb and the hidden "More player controls" menu), so selectors are scoped
+    // to #left-controls / #right-controls.
     {
       id: "ytmusic",
       name: "YouTube Music",
       color: "#ff0033",
       hosts: ["music.youtube.com"],
       controls: {
-        playPause: "ytmusic-player-bar #play-pause-button",
-        next: "ytmusic-player-bar .next-button",
-        previous: "ytmusic-player-bar .previous-button",
-        shuffle: "ytmusic-player-bar .shuffle",
-        repeat: "ytmusic-player-bar .repeat",
-        like: [
-          "ytmusic-player-bar ytmusic-like-button-renderer #button-shape-like button",
-          "ytmusic-player-bar ytmusic-like-button-renderer .like",
+        playPause: `${YTM} #play-pause-button button`,
+        next: `${YTM} #left-controls .next-button button`,
+        previous: `${YTM} #left-controls .previous-button button`,
+        shuffle: [
+          `${YTM} #right-controls .shuffle button`,
+          `${YTM} .expand-shuffle button`, // copy inside "More player controls" (narrow windows)
         ],
-        seek: { slider: "ytmusic-player-bar #progress-bar", type: "paper" },
-        volume: { slider: "ytmusic-player-bar #volume-slider", type: "paper" },
+        repeat: `${YTM} #right-controls .repeat button`,
+        // 👍 in the player bar = "Add to liked songs" (the ⋮ menu item only exists while the menu is open)
+        like: `${YTM} #like-button-renderer #button-shape-like button`,
+        mute: `${YTM} #right-controls .volume button`,
+        // Polymer <tp-yt-paper-slider>s: the value is set directly (works even while hidden)
+        seek: { slider: `${YTM} #progress-bar`, type: "paper" },
+        volume: { slider: `${YTM} #volume-slider`, type: "paper" },
       },
       state: {
+        // Inner button reads "Pause" while playing (the outer element only has a title)
         isPlaying: {
-          selector: "ytmusic-player-bar #play-pause-button",
+          selector: `${YTM} #play-pause-button button`,
           attr: "aria-label",
           match: /pause/i,
         },
-        title: "ytmusic-player-bar .content-info-wrapper .title",
+        title: `${YTM} .content-info-wrapper .title`,
+        // byline title="Shaan & Kailash Kher • Fanaa • 2006"
         artist: {
-          selector: "ytmusic-player-bar .content-info-wrapper .byline",
-          transform: (v) => v.split("•")[0].trim(), // "Artist • Album • 2020"
+          selector: `${YTM} .content-info-wrapper .byline`,
+          transform: (v) => v.split("•")[0].trim(),
         },
+        album: {
+          selector: `${YTM} .content-info-wrapper .byline`,
+          transform: (v) => v.split("•")[1]?.trim(),
+        },
+        // src="https://yt3.googleusercontent.com/…=w60-h60-l90-rj" → ask for a bigger image.
+        // (i.ytimg.com video thumbnails have no size part and are left as-is.)
         artwork: {
-          selector: [
-            "ytmusic-player-bar .thumbnail-image-wrapper img",
-            "ytmusic-player-bar img.image",
-          ],
+          selector: `${YTM} .thumbnail-image-wrapper img.image`,
           prop: "src",
+          transform: (v) => v.replace(/=w\d+-h\d+/, "=w300-h300"),
         },
-        // time-info text looks like "1:23 / 3:45"
+        // <span class="time-info">0:27 / 4:36</span>
         position: {
-          selector: "ytmusic-player-bar .time-info",
+          selector: `${YTM} .time-info`,
           transform: (v) => v.split("/")[0],
           parse: "time",
         },
         duration: {
-          selector: "ytmusic-player-bar .time-info",
+          selector: `${YTM} .time-info`,
           transform: (v) => v.split("/")[1],
           parse: "time",
         },
-        volume: { selector: "ytmusic-player-bar #volume-slider", slider: true },
+        // aria-valuenow="100" of aria-valuemax="100"
+        volume: { selector: `${YTM} #volume-slider`, slider: true },
+        muted: {
+          selector: `${YTM} #right-controls .volume button`,
+          attr: "aria-label",
+          match: /unmute/i,
+        },
+        // Shuffle has no label/attribute change — only the icon changes: when ON, the SVG path
+        // gains a small dot, drawn as a circle arc "…M3 10.001a2 2 0 110 4 2 2 0 010-4Z".
+        shuffle: {
+          selector: [
+            `${YTM} #right-controls .shuffle button svg path`,
+            `${YTM} .expand-shuffle button svg path`,
+          ],
+          attr: "d",
+          match: /a2 2 0 11/,
+        },
+        // <ytmusic-like-button-renderer like-status="INDIFFERENT" | "LIKE" | "DISLIKE">
         liked: {
-          selector: "ytmusic-player-bar ytmusic-like-button-renderer",
+          selector: `${YTM} #like-button-renderer`,
           attr: "like-status",
           match: /^LIKE$/,
         },
-        // Button label describes the current mode: "Repeat off" / "Repeat all" / "Repeat one"
+        // <ytmusic-player-bar repeat-mode="NONE" | "ALL" | "ONE">
         repeat: {
-          selector: "ytmusic-player-bar .repeat",
-          attr: "aria-label",
-          modes: { one: /one/i, all: /all/i },
+          selector: YTM,
+          attr: "repeat-mode",
+          modes: { one: /^ONE$/, all: /^ALL$/ },
         },
       },
     },
