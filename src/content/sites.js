@@ -462,6 +462,21 @@
       name: "JioSaavn",
       color: "#2bc5b4",
       hosts: ["jiosaavn.com"],
+      // <aside id="search" class="c-search">: a react-bootstrap-typeahead box
+      //   <input class="rbt-input-main" role="combobox">  (+ a read-only "rbt-input-hint" twin — not that one)
+      // Results (top result / albums / songs / podcasts) show only while the box is focused:
+      //   <div class="c-search__list"> … <article class="o-snippet">
+      //     <div role="button" aria-label="Play Hela Ki Prema" class="o-flag__img"><img src="…150x150.jpg">
+      //     <div class="o-flag__body"><a>Hela Ki Prema</a><p><span>Odia Song · Hela Ki Prema · Humane Sagar…</span></p>
+      search: {
+        input: "#search input.rbt-input-main",
+        results: "#search .c-search__list article.o-snippet",
+        title: ".o-flag__body a",
+        subtitle: ".o-flag__body p",
+        image: { selector: ".o-flag__img img", prop: "src" },
+        play: '[role="button"][aria-label^="Play"]',
+        delay: 500,
+      },
       controls: {
         playPause: [
           "#player_play_pause",

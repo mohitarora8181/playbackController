@@ -455,12 +455,29 @@
 
   const nativeInputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
 
+  /**
+   * Focus the search box. While the popup is open the browser window itself isn't
+   * focused, so input.focus() alone fires no focus events — and many sites only show
+   * their results while the box is focused. Fire them ourselves too.
+   */
+  function focusInput(input) {
+    input.focus();
+    input.dispatchEvent(new FocusEvent('focus', { composed: true }));
+    input.dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
+  }
+
+  function setValue(input, text) {
+    nativeInputValue.call(input, text); // bypasses React's value tracking, so React sees a change
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: text }));
+  }
+
   /** Type into a (React-controlled) input: set the value natively, then fire the events a keypress would. */
   function typeInto(input, text) {
-    input.focus();
-    input.dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
-    nativeInputValue.call(input, text);
-    input.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: text }));
+    focusInput(input);
+    // React ignores an "input" whose value didn't change: when re-running the same
+    // query, clear the box first so the site really searches again.
+    if (input.value === text) setValue(input, '');
+    setValue(input, text);
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
@@ -554,8 +571,17 @@
     };
 
     let found = locate();
+    const input = find(cfg.input);
+    if (!found && input) {
+      // The list may only exist while the box is focused — focus it and look again.
+      focusInput(input);
+      for (let i = 0; i < 6 && !found; i++) {
+        await sleep(100);
+        found = locate();
+      }
+    }
     if (!found && lastQuery) {
-      // Dropdown closed (e.g. the page lost focus) — search again and look for the same row.
+      // Still gone (e.g. the site cleared it) — search again and look for the same row.
       await search(lastQuery);
       found = locate();
     }
@@ -571,7 +597,6 @@
     clickEl(target, cfg.events);
 
     // Close the dropdown again.
-    const input = find(cfg.input);
     input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
     scheduleCheck(800);
     return { ok: true };
