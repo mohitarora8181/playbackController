@@ -25,6 +25,7 @@
   const present = (v) => v !== undefined && v !== null && v !== '' && !Number.isNaN(v);
   const first = (...vals) => vals.find(present);
   const log = (...a) => console.debug('[PlaybackController]', ...a);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   function parseTime(text) {
     const m = String(text).trim().match(/^([-−])?\s*(\d+(?::\d{1,2}){0,2})/);
@@ -299,10 +300,41 @@
     return pointerSlide(el, fraction, opts.vertical);
   }
 
-  function slideControl(name, fraction) {
+  /** Simulate the mouse entering (on=true) or leaving (on=false) an element. */
+  function hover(el, on) {
+    const base = { cancelable: true, composed: true, view: window, relatedTarget: document.body };
+    const types = on
+      ? ['pointerover', 'pointerenter', 'mouseover', 'mouseenter']
+      : ['pointerout', 'pointerleave', 'mouseout', 'mouseleave'];
+    for (const type of types) {
+      const bubbles = !type.endsWith('enter') && !type.endsWith('leave');
+      el.dispatchEvent(type.startsWith('pointer')
+        ? new PointerEvent(type, { ...base, bubbles, pointerId: 1, pointerType: 'mouse', isPrimary: true })
+        : new MouseEvent(type, { ...base, bubbles }));
+    }
+  }
+
+  /**
+   * Move a `controls.seek` / `controls.volume` slider. If the slider only exists while
+   * something is hovered (`reveal: 'selector'`), hover that first, wait for the slider
+   * to appear, set it, then move the "mouse" away again.
+   */
+  async function slideControl(name, fraction) {
     const c = ctl(name);
-    const el = c?.slider && find(c.slider);
-    return el ? setSlider(el, fraction, c) : false;
+    if (!c?.slider) return false;
+    let el = find(c.slider);
+    let revealEl = null;
+    if (!el && c.reveal) {
+      revealEl = find(c.reveal);
+      if (!revealEl) return false;
+      hover(revealEl, true);
+      for (let i = 0; i < 20 && !(el = find(c.slider)); i++) await sleep(25); // up to ~0.5 s
+    }
+    try {
+      return el ? setSlider(el, fraction, c) : false;
+    } finally {
+      if (revealEl) setTimeout(() => hover(revealEl, false), 300);
+    }
   }
 
   const ACTIONS = {
@@ -320,10 +352,13 @@
     toggleMute: () => clickControl('mute'),
   };
 
-  function run(name, ...args) {
+  async function run(name, ...args) {
     try {
-      const ok = !!ACTIONS[name](...args);
-      if (ok) scheduleCheck(300);
+      const ok = !!(await ACTIONS[name](...args));
+      if (ok) {
+        if (name === 'setVolume') lastVolume = args[0];
+        scheduleCheck(300);
+      }
       return { ok };
     } catch (e) {
       log(name, 'failed:', e);
@@ -332,9 +367,19 @@
   }
 
   // ─────────────────────────────── state ──────────────────────────────────
+  /** Is the control usable? (Its element exists, or the element that reveals it does.) */
   function found(name) {
     const c = ctl(name);
-    return !!c && !!find(c.click || c.slider);
+    if (!c) return false;
+    return !!find(c.click || c.slider) || (!!c.reveal && !!find(c.reveal));
+  }
+
+  // Last volume we saw, for sliders that only exist while hovered.
+  let lastVolume;
+  function readVolume() {
+    const v = first(readField(site.state?.volume), readSliderControl('volume'));
+    if (present(v)) lastVolume = v;
+    return lastVolume;
   }
 
   function getState() {
@@ -360,7 +405,7 @@
       artwork: readField(S.artwork),
       position,
       duration,
-      volume: first(readField(S.volume), readSliderControl('volume')),
+      volume: readVolume(),
       shuffle: readField(S.shuffle),
       repeat: repeatMode(),
       liked: readField(S.liked),

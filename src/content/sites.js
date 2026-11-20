@@ -35,6 +35,8 @@
  *               Plain numbers are divided by `max` (default 100); "%" needs no max.
  *   The same entry is used to read volume and, when there's no `state.position`
  *   text, the playback position (fraction × duration).
+ *   reveal: 'selector'  for sliders that only exist while something is hovered (e.g. a
+ *               volume popover): that element is hovered first, then un-hovered after.
  *
  *   state: {                    // what to READ. Every field is optional.
  *     title | artist | album | artwork | position | duration | volume |
@@ -77,6 +79,7 @@
   const label = (word) => [`[aria-label="${word}" i]`, `[title="${word}" i]`];
 
   const YTM = "ytmusic-player-bar"; // YouTube Music bottom player bar
+  const AMZ = "#transport"; // Amazon Music bottom player bar
   const GAANA = ".miniPlayerWrapper"; // Gaana bottom player bar
   const SAAVN_BAR = ["#player", ".c-player", '[class*="c-player"]'];
 
@@ -293,75 +296,68 @@
     },
 
     // ─────────────────────────────── Amazon Music ──────────────────────────────
-    // Built with web components (<music-button>, <music-horizontal-item>) that
-    // live partly in shadow DOM, hence `shadow: true`.
+    // Bottom bar: <div id="transport">. Buttons are <music-button icon-name="…"> web components;
+    // the icon-name changes with state (play ↔ pause). Everything is scoped to #transport so
+    // big "Play"/"Shuffle" buttons on album & playlist pages are never touched.
     {
       id: "amazon",
       name: "Amazon Music",
       color: "#25d1da",
       hosts: [/^music\.amazon\./],
-      shadow: true,
       controls: {
         playPause: [
-          '#transport music-button[icon-name="pause"]',
-          '#transport music-button[icon-name="play"]',
-          ...label("Pause"),
-          ...label("Play"),
+          `${AMZ} music-button[icon-name="pause"]`,
+          `${AMZ} music-button[icon-name="play"]`,
         ],
-        next: ['#transport music-button[icon-name="next"]', ...label("Next")],
-        previous: [
-          '#transport music-button[icon-name="previous"]',
-          ...label("Previous"),
-        ],
-        shuffle: [
-          '#transport music-button[icon-name="shuffle"]',
-          ...label("Shuffle"),
-        ],
-        repeat: [
-          '#transport music-button[icon-name="repeat"]',
-          '#transport music-button[icon-name="repeatone"]',
-          ...label("Repeat"),
-        ],
-        seek: {
-          slider: [
-            '#transport [role="slider"]',
-            "music-slider",
-            '#transport input[type="range"]',
-          ],
-        },
+        next: [`${AMZ} #nextButton`, `${AMZ} music-button[icon-name="next"]`],
+        previous: `${AMZ} music-button[icon-name="previous"]`,
+        // <music-button icon-name="favorite"> (assumed to change to e.g. "favoritefilled" when liked)
+        like: `${AMZ} music-button[icon-name^="favorite"]`,
+        // <div id="progress-container" role="slider" aria-valuenow="14" aria-valuemax="292.85">
+        seek: { slider: `${AMZ} #progress-container` },
+        // <input id="volume-range" type="range" min="0" max="1"> only exists while the speaker
+        // icon is hovered, so hover #volume-button first (`reveal`).
         volume: {
-          slider: [
-            '#volume [role="slider"]',
-            'music-volume-control input[type="range"]',
-          ],
+          slider: `${AMZ} #volume-range`,
+          reveal: `${AMZ} #volume-button`,
         },
+        // <music-button id="volume-button" icon-name="volumeon">
+        mute: `${AMZ} #volume-button`,
+        // <music-button icon-name="shuffle"> (inner <button aria-label="Shuffle">). Not in the bottom
+        // bar; looked for in the player areas only — album pages have their own big "Shuffle" button.
+        shuffle: [
+          `${AMZ} music-button[icon-name^="shuffle"]`,
+          `#transport-overlay music-button[icon-name^="shuffle"]`,
+        ],
       },
       state: {
-        isPlaying: [
-          {
-            selector: '#transport music-button[icon-name="pause"]',
-            exists: true,
-          },
-          { selector: label("Pause"), exists: true },
-        ],
+        // The play button's icon-name becomes "pause" while playing
+        isPlaying: { selector: `${AMZ} music-button[icon-name="pause"]`, exists: true },
+        // <music-horizontal-item id="miniNPVTrackInfo" primary-text="…" secondary-text="…" image-src="…">
         title: [
-          {
-            selector: "#transport music-horizontal-item",
-            attr: "primary-text",
-          },
-          "#transport music-horizontal-item >>> .primaryText",
+          { selector: `${AMZ} #miniNPVTrackInfo`, attr: "primary-text" },
+          { selector: `${AMZ} music-horizontal-item`, attr: "primary-text" },
         ],
         artist: [
-          {
-            selector: "#transport music-horizontal-item",
-            attr: "secondary-text",
-          },
-          "#transport music-horizontal-item >>> .secondaryText",
+          { selector: `${AMZ} #miniNPVTrackInfo`, attr: "secondary-text" },
+          { selector: `${AMZ} music-horizontal-item`, attr: "secondary-text" },
         ],
-        artwork: {
-          selector: "#transport music-horizontal-item",
-          attr: "image-src",
+        artwork: [
+          { selector: `${AMZ} #miniNPVTrackInfo`, attr: "image-src" },
+          { selector: `${AMZ} music-horizontal-item`, attr: "image-src" },
+        ],
+        // Exact seconds from the slider (the visible text shows time REMAINING: "00:14 - 04:38")
+        position: { selector: `${AMZ} #progress-container`, attr: "aria-valuenow", parse: "number" },
+        duration: { selector: `${AMZ} #progress-container`, attr: "aria-valuemax", parse: "number" },
+        liked: {
+          selector: `${AMZ} music-button[icon-name^="favorite"]`,
+          attr: "icon-name",
+          match: /^favorite.+/,
         },
+        // Readable only while the slider is shown; otherwise the last seen value is kept.
+        volume: { selector: `${AMZ} #volume-range`, slider: true },
+        // icon-name "volumeon" → assumed to switch to something like "volumeoff" / "mute"
+        muted: { selector: `${AMZ} #volume-button`, attr: "icon-name", match: /off|mute/i },
       },
     },
 
