@@ -236,6 +236,27 @@
       name: "YouTube Music",
       color: "#ff0033",
       hosts: ["music.youtube.com"],
+      // <ytmusic-search-box> … <input id="input" role="combobox">, then <div id="suggestion-list"> with:
+      //   <ytmusic-search-suggestion>  text suggestion ("chand sifarish"), magnifier icon
+      //   <ytmusic-responsive-list-item-renderer>  song row: thumbnail + <ytmusic-play-button-renderer id="play-button">,
+      //       title "Chalray Chalray Wal", subtitle "Song • Shafaullah Khan Rokhri • 3.6m plays"
+      search: {
+        input: "ytmusic-search-box input#input",
+        open: "ytmusic-search-box .search-button button", // only used if the box isn't on the page
+        results:
+          "ytmusic-search-box #suggestion-list ytmusic-search-suggestion, " +
+          "ytmusic-search-box #suggestion-list ytmusic-responsive-list-item-renderer",
+        title: "yt-formatted-string.title",
+        subtitle: ".secondary-flex-columns .flex-column yt-formatted-string",
+        image: {
+          selector: "ytmusic-thumbnail-renderer img",
+          prop: "src",
+          transform: (v) => v.replace(/=w\d+-h\d+/, "=w226-h226"),
+        },
+        play: "ytmusic-play-button-renderer#play-button",
+        suggestion: ".search-suggestion-icon",
+        delay: 400,
+      },
       controls: {
         playPause: `${YTM} #play-pause-button button`,
         next: `${YTM} #left-controls .next-button button`,
