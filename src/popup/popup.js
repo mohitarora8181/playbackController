@@ -18,6 +18,15 @@ async function call(tabId, method, ...args) {
   }
 }
 
+/** Like call(), but keeps the engine's { error } so it can be shown to the user. */
+async function callRaw(tabId, method, ...args) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, { type: 'engine-call', method, args });
+  } catch {
+    return { error: "Couldn't reach the page — try reloading the tab" };
+  }
+}
+
 // ────────────────────────────── helpers ───────────────────────────────────
 function fmt(sec) {
   if (!Number.isFinite(sec) || sec < 0) return '0:00';
@@ -80,8 +89,9 @@ function renderChips() {
 
 function render(s) {
   const has = !!s;
-  $('player').hidden = !has;
+  $('player').hidden = !has || searching;
   $('empty').hidden = has;
+  $('search-bar').hidden = !s?.capabilities?.search;
   if (!has) return;
   lastState = s;
 
@@ -175,6 +185,7 @@ async function refreshOnce() {
 
 function select(tabId) {
   currentId = tabId;
+  clearSearch();
   renderChips();
   refresh();
 }
@@ -225,9 +236,153 @@ $('site').onclick = async () => {
   window.close();
 };
 
+// ─────────────────────────────── search ───────────────────────────────────
+// Typing sends the query to the site's own search box; its dropdown rows come
+// back and are shown here instead of the player. Picking one plays it there.
+let searching = false; // results view is showing
+let searchSeq = 0;     // ignores answers to outdated queries
+let searchTimer = null;
+let results = [];
+
+const SEARCH_ICON = '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+
+function showResultsView(on) {
+  searching = on;
+  $('results').hidden = !on;
+  $('player').hidden = on || !lastState;
+  $('search-clear').hidden = !$('search').value;
+}
+
+function setSearchMsg(text, busy = false) {
+  $('results-msg').textContent = text;
+  $('search-spin').hidden = !busy;
+}
+
+function clearSearch() {
+  clearTimeout(searchTimer);
+  searchSeq++;
+  results = [];
+  $('search').value = '';
+  $('results-list').replaceChildren();
+  setSearchMsg('');
+  showResultsView(false);
+}
+
+function renderResults(res) {
+  results = res?.results || [];
+  const listEl = $('results-list');
+  listEl.replaceChildren(
+    ...results.map((r) => {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.className = 'result';
+      b.title = [r.title, r.subtitle].filter(Boolean).join(' — ');
+
+      if (r.image && !r.suggestion) {
+        const img = document.createElement('img');
+        img.src = r.image;
+        img.alt = '';
+        b.append(img);
+      } else {
+        const ico = document.createElement('span');
+        ico.className = 'r-ico';
+        ico.innerHTML = SEARCH_ICON; // static markup, not page data
+        b.append(ico);
+      }
+
+      const text = document.createElement('span');
+      text.className = 'r-text';
+      const t = document.createElement('span');
+      t.className = 'r-title';
+      t.textContent = r.title;
+      text.append(t);
+      if (r.subtitle) {
+        const sub = document.createElement('span');
+        sub.className = 'r-sub';
+        sub.textContent = r.subtitle;
+        text.append(sub);
+      }
+      b.append(text);
+
+      if (!r.suggestion) {
+        b.insertAdjacentHTML('beforeend', '<svg class="r-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>');
+      }
+      b.onclick = () => pickResult(r);
+      li.append(b);
+      return li;
+    }),
+  );
+  if (res?.error) setSearchMsg(res.error);
+  else setSearchMsg(results.length ? '' : 'No results');
+}
+
+async function runSearch(query) {
+  const p = current();
+  if (!p) return;
+  const seq = ++searchSeq;
+  setSearchMsg('Searching…', true);
+  const res = await callRaw(p.tabId, 'search', query);
+  if (seq !== searchSeq || res?.stale) return; // a newer query is on its way
+  renderResults(res);
+}
+
+async function pickResult(r) {
+  const p = current();
+  if (!p) return;
+  const seq = ++searchSeq;
+  setSearchMsg(r.suggestion ? 'Searching…' : `Playing “${r.title}”…`, true);
+  const res = await callRaw(p.tabId, 'playResult', r.index, r.key);
+  if (seq !== searchSeq) return;
+  if (res?.refined) {
+    // It was a suggestion: the site searched for it; show the new results.
+    $('search').value = res.query || r.title;
+    renderResults(res);
+    return;
+  }
+  if (res?.ok) {
+    clearSearch();
+    setTimeout(refresh, 600);
+  } else {
+    setSearchMsg(res?.error || "Couldn't play that result");
+  }
+}
+
+$('search').addEventListener('input', (e) => {
+  const q = e.target.value.trim();
+  clearTimeout(searchTimer);
+  if (!q) return clearSearch();
+  showResultsView(true);
+  setSearchMsg('Searching…', true);
+  searchTimer = setTimeout(() => runSearch(q), 400);
+});
+
+$('search').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('search').value) {
+    e.preventDefault();
+    clearSearch();
+  } else if (e.key === 'Enter') {
+    const first = results.find((r) => !r.suggestion) || results[0];
+    if (first) pickResult(first);
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    $('results-list').querySelector('.result')?.focus();
+  }
+});
+
+$('results-list').addEventListener('keydown', (e) => {
+  const items = [...$('results-list').querySelectorAll('.result')];
+  const i = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' && i < items.length - 1) { e.preventDefault(); items[i + 1].focus(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); (i > 0 ? items[i - 1] : $('search')).focus(); }
+});
+
+$('search-clear').onclick = () => { clearSearch(); $('search').focus(); };
+
 document.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
-  if (e.key === ' ') { e.preventDefault(); act('togglePlay'); }
+  if (searching && e.target.closest?.('.results')) return; // arrows/space belong to the result list
+  if (e.key === '/' && !$('search-bar').hidden) { e.preventDefault(); $('search').focus(); }
+  else if (e.key === ' ') { e.preventDefault(); act('togglePlay'); }
   else if (e.key === 'ArrowRight') act(e.shiftKey ? 'seekBy' : 'next', ...(e.shiftKey ? [10] : []));
   else if (e.key === 'ArrowLeft') act(e.shiftKey ? 'seekBy' : 'previous', ...(e.shiftKey ? [-10] : []));
 });

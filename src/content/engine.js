@@ -60,12 +60,15 @@
     return roots;
   }
 
-  /** querySelectorAll with optional shadow-DOM search and `a >>> b` piercing. */
-  function queryAll(selector, deep) {
+  /**
+   * querySelectorAll with optional shadow-DOM search and `a >>> b` piercing.
+   * `root` limits the search to one element (e.g. a single search-result row).
+   */
+  function queryAll(selector, deep, root = document) {
     const [head, ...rest] = selector.split('>>>').map((s) => s.trim());
-    let nodes = deep
+    let nodes = deep && root === document
       ? [document, ...shadowRoots()].flatMap((r) => [...r.querySelectorAll(head)])
-      : [...document.querySelectorAll(head)];
+      : [...root.querySelectorAll(head)];
     for (const part of rest) {
       nodes = nodes.flatMap((n) => (n.shadowRoot ? [...n.shadowRoot.querySelectorAll(part)] : []));
     }
@@ -79,28 +82,28 @@
   }
 
   /** First match across a selector list, preferring visible elements. */
-  function find(selectors) {
+  function find(selectors, root = document) {
     for (const sel of list(selectors)) {
       let nodes;
-      try { nodes = queryAll(sel, !!site.shadow); } catch { continue; } // invalid selector
+      try { nodes = queryAll(sel, !!site.shadow, root); } catch { continue; } // invalid selector
       if (nodes.length) return nodes.find(isVisible) || nodes[0];
     }
     return null;
   }
 
   // ────────────────────────────── reading ─────────────────────────────────
-  function readField(spec) {
+  function readField(spec, root = document) {
     if (spec == null) return undefined;
     if (Array.isArray(spec)) {
       for (const s of spec) {
-        const v = readField(s);
+        const v = readField(s, root);
         if (present(v)) return v;
       }
       return undefined;
     }
     if (typeof spec === 'string') spec = { selector: spec };
 
-    const el = find(spec.selector);
+    const el = find(spec.selector, root);
     if (!el) return undefined;
     if (spec.exists) return true;
 
@@ -395,6 +398,7 @@
       repeat: found('repeat'),
       like: found('like'),
       mute: found('mute'),
+      search: !!site.search && !!(find(site.search.input) || (site.search.open && find(site.search.open))),
     };
     const state = {
       site: siteInfo,
@@ -437,6 +441,140 @@
       sliders[k] = v === undefined ? null : Math.round(v * 1000) / 1000;
     }
     return { site: siteInfo, controls, state, sliders };
+  }
+
+  // ─────────────────────────────── search ─────────────────────────────────
+  // Driven by `site.search` in sites.js:
+  //   input       the site's search box
+  //   open        (optional) button to click first if the box isn't on the page
+  //   results     one element per dropdown row
+  //   title / subtitle / image   field specs read INSIDE each row
+  //   play        (optional) what to click inside a row to play it (default: the row)
+  //   suggestion  (optional) selector inside a row marking a plain query suggestion
+  let lastQuery = '';
+
+  const nativeInputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+
+  /** Type into a (React-controlled) input: set the value natively, then fire the events a keypress would. */
+  function typeInto(input, text) {
+    input.focus();
+    input.dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
+    nativeInputValue.call(input, text);
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: text }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function resultRows() {
+    for (const sel of list(site.search.results)) {
+      let nodes;
+      try { nodes = queryAll(sel, false); } catch { continue; }
+      if (nodes.length) return nodes;
+    }
+    return [];
+  }
+
+  const rowKey = (r) => `${r.title}|${r.subtitle ?? ''}`;
+
+  function readResults() {
+    const cfg = site.search;
+    return resultRows()
+      .map((row, index) => {
+        const r = {
+          index,
+          title: readField(cfg.title, row),
+          subtitle: readField(cfg.subtitle, row),
+          image: readField(cfg.image, row),
+          suggestion: cfg.suggestion ? !!find(cfg.suggestion, row) : false,
+        };
+        r.key = rowKey(r);
+        return r;
+      })
+      .filter((r) => r.title);
+  }
+
+  /** Wait until the dropdown shows rows that are new (≠ before) and have stopped changing. */
+  async function waitForResults(before, cfg) {
+    const start = performance.now();
+    const timeout = cfg.timeout ?? 6000;
+    let prev = null;
+    let stable = 0;
+    await sleep(cfg.delay ?? 300);
+    while (performance.now() - start < timeout) {
+      const rows = readResults();
+      const sig = rows.map((r) => r.key).join('\n');
+      // Same rows as before typing are only accepted after a while (re-running the same query).
+      const fresh = sig !== before || performance.now() - start > 1500;
+      if (rows.length && fresh && sig === prev) {
+        if (++stable >= 2) return rows; // unchanged for 3 reads in a row
+      } else {
+        stable = 0;
+      }
+      prev = sig;
+      await sleep(200);
+    }
+    return readResults();
+  }
+
+  async function search(query) {
+    const cfg = site.search;
+    if (!cfg) return { error: 'Search is not set up for this site' };
+    query = String(query ?? '').trim();
+    lastQuery = query;
+
+    let input = find(cfg.input);
+    if (!input && cfg.open) {
+      const opener = find(cfg.open);
+      if (opener) {
+        clickEl(opener);
+        for (let i = 0; i < 20 && !(input = find(cfg.input)); i++) await sleep(50);
+      }
+    }
+    if (!input) return { error: 'Search box not found on the page' };
+
+    const before = readResults().map((r) => r.key).join('\n');
+    clickEl(input);
+    typeInto(input, query);
+    if (!query) return { query, results: [] };
+
+    const results = await waitForResults(before, cfg);
+    if (query !== lastQuery) return { query, stale: true, results: [] }; // a newer search started
+    return { query, results };
+  }
+
+  /** Play the row at `index` (checked against its key, since the dropdown may have changed). */
+  async function playResult(index, key) {
+    const cfg = site.search;
+    if (!cfg) return { ok: false, error: 'Search is not set up for this site' };
+
+    const locate = () => {
+      const rows = resultRows();
+      const results = readResults();
+      const hit = results.find((r) => r.index === index && r.key === key) || results.find((r) => r.key === key);
+      return hit ? { result: hit, row: rows[hit.index] } : null;
+    };
+
+    let found = locate();
+    if (!found && lastQuery) {
+      // Dropdown closed (e.g. the page lost focus) — search again and look for the same row.
+      await search(lastQuery);
+      found = locate();
+    }
+    if (!found) return { ok: false, error: 'That result is no longer shown — search again' };
+
+    // A plain suggestion ("tu mil jaaye king") isn't playable: search for it instead.
+    if (found.result.suggestion) {
+      const refined = await search(found.result.title);
+      return { ok: true, refined: true, ...refined };
+    }
+
+    const target = (cfg.play && find(cfg.play, found.row)) || found.row;
+    clickEl(target, cfg.events);
+
+    // Close the dropdown again.
+    const input = find(cfg.input);
+    input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+    scheduleCheck(800);
+    return { ok: true };
   }
 
   // ─────────────────── change notifications to background ─────────────────
@@ -483,6 +621,8 @@
     toggleRepeat: () => run('toggleRepeat'),
     toggleLike: () => run('toggleLike'),
     toggleMute: () => run('toggleMute'),
+    search: (query) => search(query),
+    playResult: (index, key) => playResult(Number(index), String(key ?? '')),
   };
 
   window.addEventListener('message', async (e) => {

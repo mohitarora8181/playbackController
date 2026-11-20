@@ -48,6 +48,18 @@
  *   },
  * }
  *
+ * Search (optional)
+ * -----------------
+ *   search: {
+ *     input:      'css',          the site's search box (text is typed into it)
+ *     open:       'css',          (optional) button to click first if the box isn't on the page
+ *     results:    'css',          one element per row of the site's results dropdown
+ *     title / subtitle / image:   field specs, read INSIDE each row
+ *     play:       'css',          (optional) what to click inside a row to play it (default: row)
+ *     suggestion: 'css',          (optional) present inside rows that are only query suggestions;
+ *                                 choosing one searches for its text instead of playing
+ *   }
+ *
  * Repeat modes
  * ------------
  *   state.repeat yields 'off' | 'all' | 'one'. Map what the site shows with `modes`
@@ -90,6 +102,18 @@
       name: "Spotify",
       color: "#1db954",
       hosts: ["open.spotify.com"],
+      // Top-bar search: typing into the box opens a dropdown (role="listbox") of rows:
+      //   suggestion rows — magnifier icon (svg data-testid="autocomplete"), e.g. "tu mil jaaye king"
+      //   result rows     — cover image, title, "Song • Sachin-Jigar, …" and a ▶ button
+      search: {
+        input: '[data-testid="search-input"]',
+        results: '[data-testid="search-dropdown"] [role="row"]',
+        title: '[data-encore-id="listRowTitle"]',
+        subtitle: '[data-encore-id="listRowSubtitle"]',
+        image: { selector: 'img[data-testid="entity-image"]', prop: "src" },
+        play: '[role="gridcell"][id$="-play"] button',
+        suggestion: 'svg[data-testid="autocomplete"]',
+      },
       controls: {
         playPause: '[data-testid="control-button-playpause"]',
         next: '[data-testid="control-button-skip-forward"]',

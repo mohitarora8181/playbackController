@@ -10,7 +10,7 @@
 (() => {
   'use strict';
   const CHANNEL = 'playback-controller:v1';
-  const TIMEOUT_MS = 3000;
+  const TIMEOUT_MS = 10000; // search waits for the site's results, which can take a few seconds
   const pending = new Map();
   let seq = 0;
 

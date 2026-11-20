@@ -11,6 +11,13 @@ Control music on **Spotify, YouTube Music, Amazon Music, Gaana and JioSaavn** fr
 Press `Alt+P` to open the popup (change it at `chrome://extensions/shortcuts`).
 In the popup: `Space` play/pause, `←/→` prev/next, `Shift+←/→` seek ±10s.
 
+## Search (Spotify for now)
+
+Type in the popup's search box: the text is typed into the site's own search box, the site's
+results dropdown is read back and shown in the popup, and picking a row clicks that row's ▶ on
+the site. Suggestion rows (just a search term) search for that term instead. Configure it per
+site with a `search` block in `src/content/sites.js`.
+
 ## How it works
 
 ```
