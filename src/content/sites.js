@@ -76,7 +76,7 @@
   /** Match an element by its accessible label or tooltip (case-insensitive). */
   const label = (word) => [`[aria-label="${word}" i]`, `[title="${word}" i]`];
 
-  const GAANA_BAR = [".player", "#player", ".playerbar", '[class*="player" i]'];
+  const GAANA = ".miniPlayerWrapper"; // Gaana bottom player bar
   const SAAVN_BAR = ["#player", ".c-player", '[class*="c-player"]'];
 
   const SITES = [
@@ -334,52 +334,73 @@
     },
 
     // ────────────────────────────────── Gaana ──────────────────────────────────
+    // Bottom bar: <div class="miniPlayerWrapper">. Sliders are PrimeReact (.p-slider).
+    // Several buttons exist twice (mobile + desktop layouts); the visible one is used.
     {
       id: "gaana",
       name: "Gaana",
       color: "#e72c30",
       hosts: ["gaana.com"],
       controls: {
-        playPause: scoped(GAANA_BAR, [
-          ...label("Play"),
-          ...label("Pause"),
-          ".playPause",
-          '[class*="play_pause" i]',
-          '[class*="playpause" i]',
-        ]),
-        next: scoped(GAANA_BAR, [...label("Next"), '[class*="next" i]']),
-        previous: scoped(GAANA_BAR, [
-          ...label("Previous"),
-          '[class*="prev" i]',
-        ]),
-        shuffle: scoped(GAANA_BAR, [
-          ...label("Shuffle"),
-          '[class*="shuffle" i]',
-        ]),
-        repeat: scoped(GAANA_BAR, [...label("Repeat"), '[class*="repeat" i]']),
+        // <div class="play-pause-btn"><button class="pause" aria-label="Pause">
+        playPause: `${GAANA} .play-pause-btn button`,
+        next: `${GAANA} .nextButton`,
+        previous: `${GAANA} .prevButton`,
+        shuffle: `${GAANA} .shuffleButton`,
+        repeat: `${GAANA} .repButton`,
+        like: `${GAANA} .likeButton`,
+        mute: `${GAANA} .volButton`,
+        // <div id="miniPlayerSeekBar" class="p-slider p-slider-horizontal">
+        //   <span class="p-slider-range" style="width: 85.136%">  ← filled part
+        // (The handle's aria values are unreliable here: valuenow is %, valuemax is seconds.)
         seek: {
-          slider: scoped(GAANA_BAR, [
-            'input[type="range"]',
-            '[role="slider"]',
-            '[class*="progress" i]',
-          ]),
+          slider: "#miniPlayerSeekBar",
+          fill: ".p-slider-range",
+        },
+        // <div id="volumeSlider" class="p-slider p-slider-vertical">
+        //   <span class="p-slider-range" style="height: 50%">
+        volume: {
+          slider: "#volumeSlider",
+          vertical: true,
+          fill: ".p-slider-range",
         },
       },
       state: {
+        // Button reads "Pause" while playing
         isPlaying: {
-          selector: scoped(GAANA_BAR, label("Pause")),
-          exists: true,
+          selector: `${GAANA} .play-pause-btn button`,
+          attr: "aria-label",
+          match: /pause/i,
         },
-        title: scoped(GAANA_BAR, [
-          '[class*="track_name" i]',
-          '[class*="song_name" i]',
-          '[class*="title" i]',
-        ]),
-        artist: scoped(GAANA_BAR, [
-          '[class*="artist" i]',
-          '[class*="singer" i]',
-        ]),
-        artwork: { selector: scoped(GAANA_BAR, ["img"]), prop: "src" },
+        // <h3><a title="Jugni (feat. Jacqueline Fernandez)" href="/song/…">
+        title: [
+          { selector: `${GAANA} .minPlayDetail h3 a`, attr: "title" },
+          `${GAANA} .minPlayDetail h3`,
+        ],
+        artist: `${GAANA} .minPlayShortDesc`,
+        artwork: { selector: `${GAANA} .miniPlayImg img`, prop: "src" },
+        // <div class="minPlayTime">00:16 / 00:19</div>
+        position: {
+          selector: `${GAANA} .minPlayTime`,
+          transform: (v) => v.split("/")[0],
+          parse: "time",
+        },
+        duration: {
+          selector: `${GAANA} .minPlayTime`,
+          transform: (v) => v.split("/")[1],
+          parse: "time",
+        },
+        // Volume handle: aria-valuenow="50" aria-valuemax="100" (these ARE consistent)
+        volume: { selector: '#volumeSlider [role="slider"]', slider: true },
+        muted: { selector: `${GAANA} .volButton`, attr: "aria-pressed", match: /true/ },
+        shuffle: { selector: `${GAANA} .shuffleButton`, attr: "aria-pressed", match: /true/ },
+        liked: { selector: `${GAANA} .likeButton`, attr: "aria-pressed", match: /true/ },
+        // aria-label="Repeat mode: off" — the label states the CURRENT mode
+        repeat: {
+          selector: `${GAANA} .repButton`,
+          attr: "aria-label",
+          modes: { one: /:\s*(one|single|song)\b/i, all: /:\s*(all|on)\b/i },
+        },
       },
     },
 
