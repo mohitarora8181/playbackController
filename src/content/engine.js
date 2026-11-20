@@ -84,6 +84,11 @@
   /** First match across a selector list, preferring visible elements. */
   function find(selectors, root = document) {
     for (const sel of list(selectors)) {
+      // ':self' = the root element itself (e.g. a search-result row whose own aria-label is the title)
+      if (sel === ':self') {
+        if (root !== document) return root;
+        continue;
+      }
       let nodes;
       try { nodes = queryAll(sel, !!site.shadow, root); } catch { continue; } // invalid selector
       if (nodes.length) return nodes.find(isVisible) || nodes[0];

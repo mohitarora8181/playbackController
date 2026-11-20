@@ -78,6 +78,7 @@
  *
  * Selector extras:
  *   'host-el >>> inner'   descends into host-el's shadowRoot.
+ *   ':self'               inside a search row: the row element itself.
  *   Lists are tried in order; the first visible match wins.
  */
 (() => {
@@ -349,6 +350,18 @@
       name: "Amazon Music",
       color: "#25d1da",
       hosts: [/^music\.amazon\./],
+      // <input id="navbarSearchInput" type="search"> (not its aria-hidden "navbarSearchInputShadow" twin).
+      // The dropdown only has TEXT suggestions — songs appear on the search results page:
+      //   <div id="searchSuggestions">
+      //     <div id="textSearchSuggestion1" role="button" aria-label="jayie sajna"><span>jayie saj</span><span>na</span>
+      // TODO: results-page rows (title / subtitle / image / play) so suggestions can be played.
+      search: {
+        input: "#navbarSearchInput",
+        results: '#searchSuggestions [id^="textSearchSuggestion"]',
+        title: { selector: ":self", attr: "aria-label" },
+        suggestion: ":self", // every row here is a suggestion
+        delay: 400,
+      },
       controls: {
         playPause: [
           `${AMZ} music-button[icon-name="pause"]`,
